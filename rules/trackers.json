@@ -1,0 +1,112 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||googletagmanager.com^",
+      "initiatorDomains": ["mangabuff.ru"],
+      "resourceTypes": ["script","image","xmlhttprequest","sub_frame","ping","other","main_frame","csp_report","stylesheet","object","media"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||google-analytics.com^",
+      "initiatorDomains": ["mangabuff.ru"],
+      "resourceTypes": ["script","image","xmlhttprequest","sub_frame","ping","other","main_frame","csp_report","stylesheet","object","media"]
+    }
+  },
+  {
+    "id": 3,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||yandex.ru^",
+      "initiatorDomains": ["mangabuff.ru"],
+      "resourceTypes": ["script","image","xmlhttprequest","sub_frame","ping","other","main_frame","csp_report","stylesheet","object","media"]
+    }
+  },
+  {
+    "id": 4,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||yastatic.net^",
+      "initiatorDomains": ["mangabuff.ru"],
+      "resourceTypes": ["script","image","xmlhttprequest","sub_frame","ping","other","main_frame","csp_report","stylesheet","object","media"]
+    }
+  },
+  {
+    "id": 5,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||doubleclick.net^",
+      "initiatorDomains": ["mangabuff.ru"],
+      "resourceTypes": ["script","image","xmlhttprequest","sub_frame","ping","other","main_frame","csp_report","stylesheet","object","media"]
+    }
+  },
+  {
+    "id": 6,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||googleadservices.com^",
+      "initiatorDomains": ["mangabuff.ru"],
+      "resourceTypes": ["script","image","xmlhttprequest","sub_frame","ping","other","main_frame","csp_report","stylesheet","object","media"]
+    }
+  },
+  {
+    "id": 7,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||googlesyndication.com^",
+      "initiatorDomains": ["mangabuff.ru"],
+      "resourceTypes": ["script","image","xmlhttprequest","sub_frame","ping","other","main_frame","csp_report","stylesheet","object","media"]
+    }
+  },
+  {
+    "id": 8,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||adfox.ru^",
+      "initiatorDomains": ["mangabuff.ru"],
+      "resourceTypes": ["script","image","xmlhttprequest","sub_frame","ping","other","main_frame","csp_report","stylesheet","object","media"]
+    }
+  },
+  {
+    "id": 9,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||yandexmetrica.com^",
+      "initiatorDomains": ["mangabuff.ru"],
+      "resourceTypes": ["script","image","xmlhttprequest","sub_frame","ping","other","main_frame","csp_report","stylesheet","object","media"]
+    }
+  },
+  {
+    "id": 10,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||top-fwz1.mail.ru^",
+      "initiatorDomains": ["mangabuff.ru"],
+      "resourceTypes": ["script","image","xmlhttprequest","sub_frame","ping","other","main_frame","csp_report","stylesheet","object","media"]
+    }
+  },
+  {
+    "id": 11,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||counter.yadro.ru^",
+      "initiatorDomains": ["mangabuff.ru"],
+      "resourceTypes": ["script","image","xmlhttprequest","sub_frame","ping","other","main_frame","csp_report","stylesheet","object","media"]
+    }
+  }
+]

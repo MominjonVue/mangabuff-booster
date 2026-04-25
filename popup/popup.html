@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title">
+        <span class="logo">⛏️</span>
+        <h1>Шахта</h1>
+      </div>
+      <div class="status" id="status">Подключение…</div>
+      <div class="user" id="user"></div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="mine" title="Шахта">⛏️ Шахта</button>
+      <button class="tab" data-tab="club" title="Клуб">💬 Клуб</button>
+      <button class="tab" data-tab="skins" title="Скины">🎨 Скины</button>
+      <button class="tab" data-tab="avatars" title="Аватар">👤 Авка</button>
+      <button class="tab" data-tab="adblock" title="Блокировка трекеров">🛡 Блок</button>
+    </nav>
+
+    <section class="panel" data-panel="mine">
+      <div class="stats">
+        <div class="stat ore">
+          <div class="stat-icon"><img src="../icons/icon48.png" alt="Руда" /></div>
+          <div class="stat-body">
+            <div class="stat-label">Руда</div>
+            <div class="stat-value" id="ore">—</div>
+          </div>
+        </div>
+        <div class="stat clicks">
+          <div class="stat-icon">⚒️</div>
+          <div class="stat-body">
+            <div class="stat-label">Удары</div>
+            <div class="stat-value" id="clicks">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="farmBtn" class="btn btn-primary">
+          <span class="btn-icon">⛏️</span><span>Фарм</span>
+        </button>
+        <button id="exchangeBtn" class="btn btn-secondary">
+          <span class="btn-icon">🔄</span><span>Обмен</span>
+        </button>
+      </div>
+
+      <div class="log" id="log" aria-live="polite"></div>
+    </section>
+
+    <section class="panel hidden" data-panel="club">
+      <div class="club-info">
+        <div class="club-row"><span class="club-label">Клуб:</span><span id="clubName">—</span></div>
+        <div class="club-row"><span class="club-label">Сегодня:</span><span id="clubProgress">0 / 13</span></div>
+      </div>
+      <div class="actions">
+        <button id="clubFarmBtn" class="btn btn-primary">
+          <span class="btn-icon">💬</span><span>Фарм</span>
+        </button>
+        <button id="clubStopBtn" class="btn btn-secondary" disabled>
+          <span class="btn-icon">⏹</span><span>Стоп</span>
+        </button>
+      </div>
+      <div class="hint">13 комментариев в день в свой клуб = алмазы. Прямой POST + UUID-хвост, без открытия страницы.</div>
+      <div class="log" id="clubLog" aria-live="polite"></div>
+    </section>
+
+    <section class="panel hidden" data-panel="skins">
+      <div class="picker-head">
+        <div class="picker-current">Текущий: <span id="skinCurrent">—</span></div>
+        <button id="skinReset" class="link-btn">Сбросить</button>
+      </div>
+      <div class="skin-grid" id="skinGrid"></div>
+      <div class="hint">Открой свой профиль на mangabuff.ru — скин применится только там.</div>
+    </section>
+
+    <section class="panel hidden" data-panel="avatars">
+      <div class="picker-head">
+        <div class="picker-current">
+          <img id="avatarPreview" class="avatar-preview" alt="" />
+          <span id="avatarLabel">—</span>
+        </div>
+        <button id="avatarReset" class="link-btn">Сбросить</button>
+      </div>
+
+      <div class="upload-row">
+        <label class="upload-btn">
+          📷 Загрузить свою
+          <input id="avatarUpload" type="file" accept="image/*" hidden />
+        </label>
+        <input id="avatarSearch" class="search" type="search" placeholder="ID…" />
+      </div>
+
+      <div class="avatar-grid" id="avatarGrid"></div>
+      <div class="hint">Аватар виден только тебе на сайте mangabuff. Загруженная картинка хранится локально.</div>
+    </section>
+
+    <section class="panel hidden" data-panel="adblock">
+      <div class="adblock-toggle-row">
+        <div>
+          <div class="adblock-title">Блокировка трекеров</div>
+          <div class="adblock-sub" id="adblockStatus">включено</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="adblockToggle" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <ul class="block-list" id="blockList"></ul>
+      <div class="hint">Срабатывает только на запросах с mangabuff.ru — другие сайты не задеваются. Чтобы перечитать правила после изменений — перезагрузи расширение в chrome://extensions.</div>
+    </section>
+  </div>
+
+  <script src="skins-data.js"></script>
+  <script src="avatars-data.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
