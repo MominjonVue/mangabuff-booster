@@ -107,48 +107,76 @@ const hitOnce = async () => {
   return { status: r.status, data };
 };
 
+// Fire one hit; retry transient failures (network, 429, 5xx) up to maxRetries.
+// 401/403/419 are fatal and bubble up so the batch can react (auth/csrf).
+const hitWithRetry = async (maxRetries = 3) => {
+  let lastErr = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const { status, data } = await hitOnce();
+      if (status >= 200 && status < 300) return { ok: true, status, data };
+      if (status === 401 || status === 403) return { ok: false, status, data, fatal: 'auth' };
+      if (status === 419) return { ok: false, status, data, fatal: 'csrf' };
+      lastErr = { status, data };
+    } catch (e) {
+      lastErr = { error: e.message };
+    }
+    if (attempt < maxRetries) await sleep(300 * (attempt + 1) + Math.floor(Math.random() * 200));
+  }
+  return { ok: false, ...lastErr };
+};
+
 els.farmBtn.addEventListener('click', async () => {
   if (!csrf) { log('Нет CSRF — обнови состояние', 'err'); return; }
   els.farmBtn.disabled = true;
   els.exchangeBtn.disabled = true;
-  log('Фарм запущен…', 'info');
 
-  let success = 0, failed = 0, last = null;
-  const max = 100;
-  for (let i = 1; i <= max; i++) {
-    let status, data;
-    try {
-      ({ status, data } = await hitOnce());
-      last = data;
-
-      if (status >= 200 && status < 300) {
-        success++;
-        updateStats({ ore: data?.ore, clicks: data?.hits_left });
-      } else {
-        failed++;
-        if (status === 419) { log('CSRF просрочен — обновляю', 'err'); await refresh(); break; }
-        if (status === 401 || status === 403) { log('Сессия закончилась', 'err'); break; }
-        if (status === 429) await sleep(900);
-      }
-    } catch (e) {
-      failed++;
-      log(`Ошибка сети: ${e.message}`, 'err');
-      await sleep(400);
-    }
-
-    const left = data?.hits_left;
-    if (typeof left === 'number') {
-      if (i % 10 === 0 || left <= 0) log(`удар ${i}/${max} · осталось ${left}`, 'ok');
-      if (left <= 0) { log('Удары закончились', 'info'); break; }
-    }
-    const msg = (data?.message || data?.error || '').toString();
-    if (msg && /закончил|нет.*удар|недостаточн/i.test(msg)) { log(msg, 'info'); break; }
-
-    await sleep(110 + Math.floor(Math.random() * 80));
+  // Use latest known hits-left so we don't fire more than we have.
+  const state = await fetchState();
+  if (!state.ok) {
+    log(state.code === 'auth' ? 'Войди на mangabuff.ru' : `Ошибка ${state.status || ''}`.trim(), 'err');
+    els.farmBtn.disabled = false;
+    els.exchangeBtn.disabled = false;
+    return;
   }
+  updateStats(state);
+  const totalHits = Math.min(Math.max(state.clicks ?? 0, 0), 100);
+  if (totalHits <= 0) {
+    log('Удары закончились', 'info');
+    els.farmBtn.disabled = false;
+    els.exchangeBtn.disabled = false;
+    return;
+  }
+
+  log(`Фарм запущен — ${totalHits} ударов параллельно…`, 'info');
+
+  const results = await Promise.allSettled(
+    Array.from({ length: totalHits }, () => hitWithRetry(3))
+  );
+
+  let success = 0, failed = 0, authError = false, csrfError = false, last = null;
+  for (const r of results) {
+    const v = r.status === 'fulfilled' ? r.value : { ok: false, error: r.reason?.message };
+    if (v.ok) {
+      success++;
+      // Pick the response with the smallest hits_left as the freshest snapshot.
+      if (v.data && (last == null || (typeof v.data.hits_left === 'number' && v.data.hits_left < (last.hits_left ?? Infinity)))) {
+        last = v.data;
+      }
+    } else {
+      failed++;
+      if (v.fatal === 'auth') authError = true;
+      if (v.fatal === 'csrf') csrfError = true;
+    }
+  }
+
+  if (csrfError) { log('CSRF просрочен — обновляю', 'err'); await refresh(); }
+  if (authError) log('Сессия закончилась', 'err');
 
   log(`Готово — ударов: ${success}, ошибок: ${failed}`, 'ok');
   if (last) updateStats({ ore: last.ore, clicks: last.hits_left });
+  else await refresh();
+
   els.farmBtn.disabled = false;
   els.exchangeBtn.disabled = false;
 });
