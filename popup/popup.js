@@ -11,26 +11,50 @@ const els = {
 
 const ORIGIN = 'https://mangabuff.ru';
 const MINE_URL = `${ORIGIN}/mine`;
-const HIT_URL = `${ORIGIN}/mine/hit`;
 const EXCHANGE_URL = `${ORIGIN}/mine/exchange`;
+const ORE_PER_DIAMOND = 100; // `rate` in the site's mineModule.js
 
 let csrf = null;
 
 const fmt = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('ru-RU'));
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const log = (msg, kind = 'info') => {
-  const line = document.createElement('div');
-  line.className = `line ${kind}`;
-  const time = document.createElement('span');
-  time.className = 'time';
-  time.textContent = new Date().toLocaleTimeString('ru-RU');
-  line.appendChild(time);
-  line.appendChild(document.createTextNode(msg));
-  els.log.appendChild(line);
-  els.log.scrollTop = els.log.scrollHeight;
-  while (els.log.childElementCount > 60) els.log.removeChild(els.log.firstChild);
+// A log panel fed from lines the popup writes itself plus background rolling
+// logs in storage (`sync({ source: entries })`). Entries are appended by id
+// per source, so reopening the popup shows what happened while it was closed.
+const makeFeed = (el) => {
+  const lastIds = {};
+  const line = (msg, kind = 'info', t = Date.now()) => {
+    const row = document.createElement('div');
+    row.className = `line ${kind}`;
+    const time = document.createElement('span');
+    time.className = 'time';
+    time.textContent = new Date(t).toLocaleTimeString('ru-RU');
+    row.appendChild(time);
+    row.appendChild(document.createTextNode(msg));
+    el.appendChild(row);
+    el.scrollTop = el.scrollHeight;
+    while (el.childElementCount > 60) el.removeChild(el.firstChild);
+  };
+  const sync = (sources) => {
+    const fresh = [];
+    for (const [src, entries = []] of Object.entries(sources)) {
+      let last = lastIds[src] || 0;
+      // Storage was reset — ids restarted.
+      if (entries.length && entries[entries.length - 1].id < last) last = 0;
+      for (const e of entries) {
+        if (e.id <= last) continue;
+        fresh.push(e);
+        last = e.id;
+      }
+      lastIds[src] = last;
+    }
+    fresh.sort((a, b) => a.t - b.t).forEach((e) => line(e.msg, e.kind, e.t));
+  };
+  return { line, sync };
 };
+
+const mineFeed = makeFeed(els.log);
+const log = mineFeed.line;
 
 const setStatus = (text, kind = '') => {
   els.status.textContent = text;
@@ -42,11 +66,27 @@ const updateStats = ({ ore, clicks } = {}) => {
   if (clicks !== undefined && clicks !== null) els.clicks.textContent = fmt(clicks);
 };
 
-const apiHeaders = () => ({
-  'Content-Type': 'application/json',
-  'X-CSRF-TOKEN': csrf,
-  'X-Requested-With': 'XMLHttpRequest',
-  'Accept': 'application/json',
+// Send a message to background. Wakes the SW if asleep. We always check
+// chrome.runtime.lastError so the "Could not establish connection" warning
+// doesn't pollute the console, and we retry once after 250ms because a
+// just-woken SW occasionally drops the very first message.
+const sendBg = (type, attempt = 0) => new Promise((resolve) => {
+  try {
+    chrome.runtime.sendMessage({ type }, (resp) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        if (attempt === 0) {
+          setTimeout(() => sendBg(type, 1).then(resolve), 250);
+        } else {
+          resolve({ ok: false, error: err.message || 'no-bg' });
+        }
+        return;
+      }
+      resolve(resp || { ok: false });
+    });
+  } catch (e) {
+    resolve({ ok: false, error: e.message });
+  }
 });
 
 // Pull state by fetching the /mine page and parsing it. The page is the only
@@ -80,7 +120,17 @@ const fetchState = async () => {
   };
 };
 
+/* ---------- Mine farm (popup side) ----------
+ *
+ * The hit loop lives in background.js (sequential hits with human-like
+ * pauses) so it keeps going with the popup closed. Here: start/stop, live
+ * stats + log from chrome.storage.local.mineFarm, and the ore exchange.
+ */
+let mineRunning = false;
+
 const refresh = async () => {
+  // While farming, background pushes fresh ore/hits on every hit.
+  if (mineRunning) return;
   try {
     const s = await fetchState();
     if (!s.ok) {
@@ -96,124 +146,111 @@ const refresh = async () => {
   }
 };
 
-const hitOnce = async () => {
-  const r = await fetch(HIT_URL, {
-    method: 'POST',
-    credentials: 'include',
-    headers: apiHeaders(),
-  });
-  let data = null;
-  try { data = await r.json(); } catch {}
-  return { status: r.status, data };
+const setMineRunningUI = (running) => {
+  mineRunning = !!running;
+  els.farmBtn.querySelector('.btn-icon').textContent = running ? '⏹' : '⛏️';
+  els.farmBtn.querySelector('.btn-label').textContent = running ? 'Стоп' : 'Фарм';
 };
 
-// Fire one hit; retry transient failures (network, 429, 5xx) up to maxRetries.
-// 401/403/419 are fatal and bubble up so the batch can react (auth/csrf).
-const hitWithRetry = async (maxRetries = 3) => {
-  let lastErr = null;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const { status, data } = await hitOnce();
-      if (status >= 200 && status < 300) return { ok: true, status, data };
-      if (status === 401 || status === 403) return { ok: false, status, data, fatal: 'auth' };
-      if (status === 419) return { ok: false, status, data, fatal: 'csrf' };
-      lastErr = { status, data };
-    } catch (e) {
-      lastErr = { error: e.message };
-    }
-    if (attempt < maxRetries) await sleep(300 * (attempt + 1) + Math.floor(Math.random() * 200));
-  }
-  return { ok: false, ...lastErr };
+const renderMineState = (s, { stats = true } = {}) => {
+  if (!s) return;
+  setMineRunningUI(s.running);
+  if (stats) updateStats({ ore: s.ore, clicks: s.hitsLeft });
+  mineFeed.sync({ mine: s.log });
 };
 
 els.farmBtn.addEventListener('click', async () => {
-  if (!csrf) { log('Нет CSRF — обнови состояние', 'err'); return; }
   els.farmBtn.disabled = true;
-  els.exchangeBtn.disabled = true;
-
-  // Use latest known hits-left so we don't fire more than we have.
-  const state = await fetchState();
-  if (!state.ok) {
-    log(state.code === 'auth' ? 'Войди на mangabuff.ru' : `Ошибка ${state.status || ''}`.trim(), 'err');
-    els.farmBtn.disabled = false;
-    els.exchangeBtn.disabled = false;
-    return;
+  const resp = await sendBg(mineRunning ? 'mine-stop' : 'mine-start');
+  if (!resp || resp.ok === false) {
+    log(resp?.error === 'auth' ? 'Войди на mangabuff.ru'
+      : `Не вышло связаться с фоном${resp?.error ? ': ' + resp.error : ''}`, 'err');
   }
-  updateStats(state);
-  const totalHits = Math.min(Math.max(state.clicks ?? 0, 0), 100);
-  if (totalHits <= 0) {
-    log('Удары закончились', 'info');
-    els.farmBtn.disabled = false;
-    els.exchangeBtn.disabled = false;
-    return;
-  }
-
-  log(`Фарм запущен — ${totalHits} ударов параллельно…`, 'info');
-
-  const results = await Promise.allSettled(
-    Array.from({ length: totalHits }, () => hitWithRetry(3))
-  );
-
-  let success = 0, failed = 0, authError = false, csrfError = false, last = null;
-  for (const r of results) {
-    const v = r.status === 'fulfilled' ? r.value : { ok: false, error: r.reason?.message };
-    if (v.ok) {
-      success++;
-      // Pick the response with the smallest hits_left as the freshest snapshot.
-      if (v.data && (last == null || (typeof v.data.hits_left === 'number' && v.data.hits_left < (last.hits_left ?? Infinity)))) {
-        last = v.data;
-      }
-    } else {
-      failed++;
-      if (v.fatal === 'auth') authError = true;
-      if (v.fatal === 'csrf') csrfError = true;
-    }
-  }
-
-  if (csrfError) { log('CSRF просрочен — обновляю', 'err'); await refresh(); }
-  if (authError) log('Сессия закончилась', 'err');
-
-  log(`Готово — ударов: ${success}, ошибок: ${failed}`, 'ok');
-  if (last) updateStats({ ore: last.ore, clicks: last.hits_left });
-  else await refresh();
-
+  // Running state / stats / log then arrive via storage.onChanged.
   els.farmBtn.disabled = false;
-  els.exchangeBtn.disabled = false;
 });
 
 els.exchangeBtn.addEventListener('click', async () => {
-  if (!csrf) { log('Нет CSRF — обнови состояние', 'err'); return; }
-  els.farmBtn.disabled = true;
   els.exchangeBtn.disabled = true;
-  log('Обмен руды…', 'info');
-
   try {
+    // Fresh ore + CSRF: the farm may be changing ore in the background.
+    const s = await fetchState();
+    if (!s.ok) {
+      log(s.code === 'auth' ? 'Войди на mangabuff.ru' : `Ошибка ${s.status || ''}`.trim(), 'err');
+      return;
+    }
+    updateStats(s);
+    // The site exchanges a chosen number of diamonds (slider), not "all ore",
+    // so ask for the maximum the current ore covers.
+    const diamonds = Math.floor((s.ore ?? 0) / ORE_PER_DIAMOND);
+    if (diamonds < 1) {
+      log(`Мало руды: ${fmt(s.ore)} — нужно от ${ORE_PER_DIAMOND}`, 'err');
+      return;
+    }
+    log(`Обмен ${fmt(diamonds * ORE_PER_DIAMOND)} руды → ${fmt(diamonds)} 💎…`, 'info');
+
     const r = await fetch(EXCHANGE_URL, {
       method: 'POST',
       credentials: 'include',
-      headers: apiHeaders(),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-CSRF-TOKEN': csrf,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json',
+      },
+      body: new URLSearchParams({ diamonds: String(diamonds) }),
     });
     let data = null;
     try { data = await r.json(); } catch {}
 
-    if (r.status >= 200 && r.status < 300) {
-      log('Обмен выполнен ✓', 'ok');
-      if (data?.ore !== undefined) updateStats({ ore: data.ore });
-      // Re-read state for the freshest numbers (server may not echo all fields).
-      await refresh();
+    if (r.status >= 200 && r.status < 300 && data) {
+      log(data.message || 'Обмен выполнен ✓', 'ok');
+      if (data.ore !== undefined) updateStats({ ore: data.ore });
     } else {
       log(data?.message || `Ошибка ${r.status}`, 'err');
     }
   } catch (e) {
     log(e.message, 'err');
+  } finally {
+    els.exchangeBtn.disabled = false;
   }
-
-  els.farmBtn.disabled = false;
-  els.exchangeBtn.disabled = false;
 });
 
 refresh();
 setInterval(refresh, 5000);
+
+/* ---------- Ads bonus (popup side) ----------
+ *
+ * background.js claims the rewarded-ad bonus 3× a day without loading the
+ * ad; its log shares the mine panel's log.
+ */
+const ADS_DAILY = 3;
+
+const adsBtn = $('adsBtn');
+const adsProgressEl = $('adsProgress');
+let adsRunning = false;
+
+const renderAdsState = (s) => {
+  if (!s) return;
+  adsRunning = !!s.running;
+  adsProgressEl.textContent = `${s.count || 0} / ${ADS_DAILY}`;
+  adsBtn.querySelector('.btn-icon').textContent = s.running ? '⏹' : '▶';
+  adsBtn.querySelector('.btn-label').textContent = s.running ? 'Стоп' : 'Забрать';
+  adsBtn.disabled = !s.running && (s.count || 0) >= ADS_DAILY;
+  mineFeed.sync({ ads: s.log });
+};
+
+adsBtn.addEventListener('click', async () => {
+  adsBtn.disabled = true;
+  const resp = await sendBg(adsRunning ? 'ads-stop' : 'ads-start');
+  if (!resp || resp.ok === false) {
+    log(resp?.error === 'auth' ? 'Войди на mangabuff.ru'
+      : `Не вышло связаться с фоном${resp?.error ? ': ' + resp.error : ''}`, 'err');
+  }
+  const { adsFarm } = await chrome.storage.local.get('adsFarm');
+  if (adsFarm) renderAdsState(adsFarm);
+  else adsBtn.disabled = false;
+});
 
 /* ---------- Tabs ---------- */
 document.querySelectorAll('.tab').forEach((tab) => {
@@ -442,41 +479,31 @@ avatarSearch.addEventListener('input', () => renderAvatars(avatarSearch.value));
   renderAvatars();
 })();
 
-/* ---------- Club comments farm (popup side) ----------
+/* ---------- Comment farm (popup side) ----------
  *
  * The actual loop lives in the background service worker (background.js) so
  * it keeps running while the popup is closed. This file is just a thin client:
- *   - Renders state from chrome.storage.local.clubFarm
+ *   - Renders state + log from chrome.storage.local.clubFarm
  *   - Live-updates via storage.onChanged while the popup is open
  *   - Sends `club-start` / `club-stop` messages to background
  *   - Pulls the authoritative daily count from /balance via background
  *
- * Day boundary is Moscow (Europe/Moscow) because the site's quest counter
- * resets at MSK midnight — done in background.js.
+ * The target (alliance, or club as a fallback) is discovered by background
+ * from the site menu. Day boundary is Moscow (Europe/Moscow) because the
+ * site's quest counter resets at MSK midnight — done in background.js.
  */
 const DAILY_TARGET = 13;
 
-const clubLogEl = $('clubLog');
 const clubNameEl = $('clubName');
 const clubProgressEl = $('clubProgress');
 const clubFarmBtn = $('clubFarmBtn');
 const clubStopBtn = $('clubStopBtn');
 
+const clubFeed = makeFeed($('clubLog'));
+const clubLog = clubFeed.line;
+
 const renderClubProgress = (count) => {
   clubProgressEl.textContent = `${count} / ${DAILY_TARGET}`;
-};
-
-const clubLog = (msg, kind = 'info') => {
-  const line = document.createElement('div');
-  line.className = `line ${kind}`;
-  const t = document.createElement('span');
-  t.className = 'time';
-  t.textContent = new Date().toLocaleTimeString('ru-RU');
-  line.appendChild(t);
-  line.appendChild(document.createTextNode(msg));
-  clubLogEl.appendChild(line);
-  clubLogEl.scrollTop = clubLogEl.scrollHeight;
-  while (clubLogEl.childElementCount > 60) clubLogEl.removeChild(clubLogEl.firstChild);
 };
 
 const setRunningUI = (running) => {
@@ -489,75 +516,18 @@ const renderClubState = (s) => {
   renderClubProgress(s.count || 0);
   if (s.clubName) clubNameEl.textContent = s.clubName;
   setRunningUI(s.running);
+  clubFeed.sync({ club: s.log });
 };
-
-// Translate background lastResult codes into a human log line.
-let lastSeenResult = null;
-const reportResult = (s) => {
-  if (!s || !s.lastResult || s.lastResult === lastSeenResult) return;
-  lastSeenResult = s.lastResult;
-  if (s.lastResult === 'ok') {
-    clubLog(`✓ ${s.count}/${DAILY_TARGET}${s.rootId && s.count === 1 ? ' (root)' : ''}`, 'ok');
-    if (s.running && s.nextAt) {
-      const wait = Math.max(0, s.nextAt - Date.now());
-      if (wait > 0) clubLog(`Жду ${Math.round(wait / 1000)}с до следующего`, 'info');
-    }
-  } else if (s.lastResult === 'cooldown') {
-    clubLog('Кулдаун сервера — ждём', 'info');
-  } else if (s.lastResult === 'csrf-refresh') {
-    clubLog('CSRF протух — обновляю', 'err');
-  } else if (s.lastResult === 'network') {
-    clubLog(`Сеть: ${s.lastError || 'ошибка'}`, 'err');
-  } else if (s.lastResult === 'done') {
-    clubLog('Готово — норма дня выполнена', 'ok');
-  } else if (s.lastResult === 'stopped') {
-    clubLog('Остановлено', 'info');
-  } else if (s.lastResult === 'error') {
-    const msg = s.lastError === 'auth' ? 'Не авторизован'
-              : s.lastError === 'no-club' ? 'У тебя нет клуба'
-              : s.lastError || 'неизвестная ошибка';
-    clubLog(`Ошибка: ${msg}`, 'err');
-  } else if (s.lastResult.startsWith('http-')) {
-    clubLog(`Ошибка: ${s.lastResult}${s.lastError ? ' — ' + s.lastError : ''}`, 'err');
-  }
-};
-
-// Send a message to background. Wakes the SW if asleep. We always check
-// chrome.runtime.lastError so the "Could not establish connection" warning
-// doesn't pollute the console, and we retry once after 250ms because a
-// just-woken SW occasionally drops the very first message.
-const sendBg = (type, attempt = 0) => new Promise((resolve) => {
-  try {
-    chrome.runtime.sendMessage({ type }, (resp) => {
-      const err = chrome.runtime.lastError;
-      if (err) {
-        if (attempt === 0) {
-          setTimeout(() => sendBg(type, 1).then(resolve), 250);
-        } else {
-          resolve({ ok: false, error: err.message || 'no-bg' });
-        }
-        return;
-      }
-      resolve(resp || { ok: false });
-    });
-  } catch (e) {
-    resolve({ ok: false, error: e.message });
-  }
-});
 
 clubFarmBtn.addEventListener('click', async () => {
   clubFarmBtn.disabled = true;
-  clubLog('Запускаю фоновый фарм…', 'info');
   const resp = await sendBg('club-start');
   if (!resp || resp.ok === false) {
     clubLog(`Не вышло связаться с фоном${resp?.error ? ': ' + resp.error : ''}`, 'err');
     clubFarmBtn.disabled = false;
     return;
   }
-  if (resp.alreadyDone) {
-    clubLog('Сегодня уже 13 — норма выполнена', 'ok');
-    clubFarmBtn.disabled = false;
-  }
+  if (resp.alreadyDone) clubFarmBtn.disabled = false;
   // setRunningUI is then driven by storage.onChanged from the SW.
 });
 
@@ -572,33 +542,35 @@ clubStopBtn.addEventListener('click', async () => {
 
 // Live-update from background while popup is open.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local' || !changes.clubFarm) return;
-  const s = changes.clubFarm.newValue;
-  renderClubState(s);
-  reportResult(s);
+  if (area !== 'local') return;
+  if (changes.clubFarm) renderClubState(changes.clubFarm.newValue);
+  if (changes.mineFarm) renderMineState(changes.mineFarm.newValue);
+  if (changes.adsFarm) renderAdsState(changes.adsFarm.newValue);
 });
 
-// Init: read state, sync count from /balance via background, auto-switch
-// to the Club tab if a farm is in progress.
+// Init: read both farms, sync count from /balance via background, auto-switch
+// to the comments tab if only that farm is in progress.
 const switchToTab = (name) => {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== name));
 };
 
 (async () => {
-  const { clubFarm } = await chrome.storage.local.get('clubFarm');
+  const { clubFarm, mineFarm, adsFarm } = await chrome.storage.local.get(['clubFarm', 'mineFarm', 'adsFarm']);
+  // Mine + ads share one log panel: render their history interleaved by time.
+  mineFeed.sync({ mine: mineFarm?.log, ads: adsFarm?.log });
+  // Stored ore/hits are only fresh while the farm runs; otherwise refresh() owns them.
+  if (mineFarm) renderMineState(mineFarm, { stats: !!mineFarm.running });
+  if (adsFarm) renderAdsState(adsFarm);
   if (clubFarm) {
     renderClubState(clubFarm);
-    if (clubFarm.running) {
-      switchToTab('club');
-      const left = clubFarm.nextAt ? Math.max(0, clubFarm.nextAt - Date.now()) : 0;
-      clubLog(`Фарм идёт фоном · ${clubFarm.count}/${DAILY_TARGET}${left ? ` · след. через ~${Math.round(left/1000)}с` : ''}`, 'info');
-    }
+    if (clubFarm.running && !mineFarm?.running) switchToTab('club');
   } else {
     renderClubState({ count: 0, running: false });
   }
-  // Pull authoritative count from /balance (background does the fetch + store update).
-  sendBg('club-sync-count').then((r) => {
+  // Pull authoritative comment + ad counts from /balance (background does the
+  // fetch + store update; renders follow via storage.onChanged).
+  sendBg('balance-sync').then((r) => {
     if (r && r.balance) clubLog(`Сервер: ${r.balance.done}/${r.balance.total}`, 'info');
   });
 })();

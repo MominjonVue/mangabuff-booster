@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "MangaBuff Шахта",
-  "version": "1.7.1",
-  "description": "Помощник для mangabuff.ru — шахта (фарм/обмен), скины профиля, аватары, авто-комментарии в клуб, блокировка трекеров (GA, Яндекс.Метрика и др.).",
+  "version": "1.8.0",
+  "description": "Помощник для mangabuff.ru — шахта (фоновый фарм/обмен), скины профиля, аватары, авто-комментарии в альянс, блокировка трекеров (GA, Яндекс.Метрика и др.).",
   "permissions": ["storage", "tabs", "scripting", "unlimitedStorage", "alarms", "declarativeNetRequest"],
   "host_permissions": ["https://mangabuff.ru/*"],
   "icons": {

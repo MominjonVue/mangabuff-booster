@@ -17,7 +17,7 @@
 
     <nav class="tabs">
       <button class="tab active" data-tab="mine" title="Шахта">⛏️ Шахта</button>
-      <button class="tab" data-tab="club" title="Клуб">💬 Клуб</button>
+      <button class="tab" data-tab="club" title="Комменты в альянс">💬 Альянс</button>
       <button class="tab" data-tab="skins" title="Скины">🎨 Скины</button>
       <button class="tab" data-tab="avatars" title="Аватар">👤 Авка</button>
       <button class="tab" data-tab="adblock" title="Блокировка трекеров">🛡 Блок</button>
@@ -43,19 +43,30 @@
 
       <div class="actions">
         <button id="farmBtn" class="btn btn-primary">
-          <span class="btn-icon">⛏️</span><span>Фарм</span>
+          <span class="btn-icon">⛏️</span><span class="btn-label">Фарм</span>
         </button>
         <button id="exchangeBtn" class="btn btn-secondary">
           <span class="btn-icon">🔄</span><span>Обмен</span>
         </button>
       </div>
 
+      <div class="ads-row">
+        <div class="ads-info">
+          <span class="ads-title">📺 Реклама</span>
+          <span class="ads-progress" id="adsProgress">0 / 3</span>
+        </div>
+        <button id="adsBtn" class="btn btn-ads">
+          <span class="btn-icon">▶</span><span class="btn-label">Забрать</span>
+        </button>
+      </div>
+
+      <div class="hint">Шахта бьёт по одному удару с паузами, как человек. Реклама: бонус забирается без показа ролика, 3 раза в день. Всё работает фоном — попап можно закрыть. Обмен: вся руда → алмазы (100 руды = 1 💎).</div>
       <div class="log" id="log" aria-live="polite"></div>
     </section>
 
     <section class="panel hidden" data-panel="club">
       <div class="club-info">
-        <div class="club-row"><span class="club-label">Клуб:</span><span id="clubName">—</span></div>
+        <div class="club-row"><span class="club-label">Куда:</span><span id="clubName">—</span></div>
         <div class="club-row"><span class="club-label">Сегодня:</span><span id="clubProgress">0 / 13</span></div>
       </div>
       <div class="actions">
@@ -66,7 +77,7 @@
           <span class="btn-icon">⏹</span><span>Стоп</span>
         </button>
       </div>
-      <div class="hint">13 комментариев в день в свой клуб = алмазы. Прямой POST + UUID-хвост, без открытия страницы.</div>
+      <div class="hint">13 комментариев в день = алмазы. Альянс находится сам по ссылке «Мой альянс» в меню сайта (если альянса нет — «Мой клуб»).</div>
       <div class="log" id="clubLog" aria-live="polite"></div>
     </section>
 

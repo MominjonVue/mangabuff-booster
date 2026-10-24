@@ -216,6 +216,30 @@ h1 {
 .panel.hidden { display: none; }
 .panel { display: flex; flex-direction: column; gap: 12px; }
 
+/* --- Ads bonus row (mine panel) --- */
+.ads-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 8px 10px 8px 12px;
+}
+.ads-info { display: flex; flex-direction: column; gap: 2px; }
+.ads-title { font-size: 12px; font-weight: 600; }
+.ads-progress { font-size: 11px; color: #8a8a9c; }
+.btn-ads {
+  padding: 8px 14px;
+  background: linear-gradient(135deg, #ec4899, #db2777);
+  box-shadow: 0 4px 12px rgba(236, 72, 153, 0.3);
+}
+.btn-ads:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(236, 72, 153, 0.45);
+}
+
 /* --- Club panel --- */
 .club-info {
   background: rgba(255, 255, 255, 0.04);
